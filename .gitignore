@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# temp files
+new_app.py
+new_index.html
+index_from_server.html
+backend/
+start-all.sh
