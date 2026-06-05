@@ -1,4 +1,4 @@
-import { CheckCircle, AlertTriangle, AlertCircle, Clock, Ruler } from 'lucide-react'
+import { CheckCircle, AlertTriangle, Clock, Ruler } from 'lucide-react'
 import type { BPHResult } from '@/types'
 
 const GRADE_CONFIG = {
@@ -138,6 +138,40 @@ export default function BPHReport({ result }: { result: BPHResult }) {
           </p>
         </div>
       </div>
+
+      {/* Visualization slices */}
+      {(result.sliceOriginal || result.sliceDetection || result.sliceSegmentation) && (
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-700">影像分析結果</h3>
+            <p className="text-xs text-gray-400 mt-0.5">原始切面 · 偵測結果 · 分割結果</p>
+          </div>
+          <div className="grid grid-cols-3 gap-0">
+            {[
+              { key: 'sliceOriginal',     label: '原始 CT',   src: result.sliceOriginal },
+              { key: 'sliceDetection',    label: '攝護腺偵測', src: result.sliceDetection },
+              { key: 'sliceSegmentation', label: '分割結果',   src: result.sliceSegmentation },
+            ].map(({ key, label, src }) => (
+              <div key={key} className="flex flex-col">
+                {src ? (
+                  <img
+                    src={`data:image/png;base64,${src}`}
+                    alt={label}
+                    className="w-full aspect-square object-cover"
+                  />
+                ) : (
+                  <div className="w-full aspect-square bg-gray-100 flex items-center justify-center text-xs text-gray-400">
+                    無影像
+                  </div>
+                )}
+                <p className="text-center text-xs text-gray-500 py-2 bg-gray-50 border-t border-gray-100">
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   )

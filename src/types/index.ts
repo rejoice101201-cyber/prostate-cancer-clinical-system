@@ -33,13 +33,18 @@ export interface BPHResult {
   caseId: string
   prostateVolumeCc: number
   bphGrade: BPHGrade
+  bphLevel: number           // 1–4 numeric level from server
   riskLevel: string
   color: 'green' | 'yellowgreen' | 'orange' | 'red'
   psaDensity?: number
-  psaDensityFlag?: boolean   // true = PSAD > 0.15, possible co-existing cancer
+  psaDensityFlag?: boolean
   recommendation: string
   processingTimeMs: number
   modelType?: string
+  // Visualization slices (base64 PNG)
+  sliceOriginal?: string
+  sliceDetection?: string
+  sliceSegmentation?: string
 }
 
 export interface PatientCase {
