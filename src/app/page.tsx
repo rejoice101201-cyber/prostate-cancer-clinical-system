@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
-import { Microscope, Upload, CheckCircle, X, ScanLine, Brain, Activity } from 'lucide-react'
+import { Microscope, Upload, CheckCircle, X, ScanLine, Brain } from 'lucide-react'
 import type { MRIUploadState, CTUploadState, ModalityMode } from '@/types'
 
 const MRI_INITIAL: MRIUploadState = {
@@ -87,7 +87,6 @@ export default function HomePage() {
   const [mode, setMode] = useState<ModalityMode>('mri')
   const [mriFiles, setMriFiles] = useState({ t2w: null as File|null, adc: null as File|null, hbv: null as File|null })
   const [ctFile,   setCtFile]   = useState<File|null>(null)
-  const [psa, setPsa] = useState('')
   const [step, setStep] = useState<'idle' | 'uploading' | 'inferring'>('idle')
   const [error, setError] = useState('')
 
@@ -106,7 +105,7 @@ export default function HomePage() {
         patientId:   autoId,
         patientName: 'Anonymous',
         age:         0,
-        psa:         psa ? Number(psa) : undefined,
+        psa:         undefined,
         studyDate:   new Date().toISOString().slice(0, 10),
         modality:    mode,
       })
@@ -121,7 +120,6 @@ export default function HomePage() {
         await axios.post('/api/inference', fd)
       } else {
         fd.append('ct', ctFile!, ctFile!.name)
-        if (psa) fd.append('psa', psa)
         await axios.post('/api/infer-ct', fd)
       }
       router.push(`/results/${newCase._id}`)
@@ -200,15 +198,6 @@ export default function HomePage() {
               {mriFiles.adc && mriFiles.hbv &&
                 <span className="text-xs text-green-600 font-medium ml-auto">✓ 完整 mpMRI</span>}
             </div>
-            {/* PSA for MRI */}
-            <div className="pt-1 border-t border-gray-100">
-              <label className="block text-sm text-gray-600 mb-1">
-                <Activity size={12} className="inline mr-1" />PSA (ng/mL) — 選填
-              </label>
-              <input type="number" step="0.01"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                placeholder="e.g. 7.5" value={psa} onChange={(e) => setPsa(e.target.value)} />
-            </div>
           </section>
         )}
 
@@ -222,18 +211,6 @@ export default function HomePage() {
             <ModalityZone label="CT *" color="blue"
               sublabel="腹/骨盆腔 CT (.nii.gz / .mha / .dcm) — 必填"
               file={ctFile} onFile={setCtFile} accept=".nii,.gz,.mha,.dcm" />
-            {/* PSA for CT */}
-            <div className="border-t border-gray-100 pt-3">
-              <label className="block text-sm text-gray-600 mb-1">
-                <Activity size={12} className="inline mr-1" />PSA (ng/mL) — 選填（用於 PSAD 計算）
-              </label>
-              <input type="number" step="0.01"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                placeholder="e.g. 4.5" value={psa} onChange={(e) => setPsa(e.target.value)} />
-              <p className="text-xs text-gray-400 mt-1">
-                輸入 PSA 可計算 PSAD，協助排除合併癌症風險
-              </p>
-            </div>
           </section>
         )}
 
