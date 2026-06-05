@@ -75,10 +75,8 @@ export default function ResultsPage() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Patient summary bar */}
         <div className="bg-white border rounded-2xl px-5 py-3 mb-6 flex flex-wrap gap-4 text-sm text-gray-600 shadow-sm">
-          <span><strong>姓名：</strong>{caseData.patientName}</span>
           <span><strong>ID：</strong>{caseData.patientId}</span>
-          <span><strong>年齡：</strong>{caseData.age} 歲</span>
-          {caseData.psa && <span><strong>PSA：</strong>{caseData.psa} ng/mL</span>}
+          {caseData.psa ? <span><strong>PSA：</strong>{caseData.psa} ng/mL</span> : null}
           <span><strong>檢查日期：</strong>{caseData.studyDate}</span>
         </div>
 
@@ -97,6 +95,20 @@ export default function ResultsPage() {
         )}
         {caseData.status === 'completed' && caseData.modality !== 'ct' && caseData.result && (
           <GradingReport result={caseData.result} />
+        )}
+
+        {/* Fallback: completed but no result stored (inference failed silently) */}
+        {caseData.status === 'completed' && !caseData.result && !caseData.bphResult && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center text-amber-700 space-y-3">
+            <p className="font-semibold">推論結果尚未回傳</p>
+            <p className="text-sm">AI 模型伺服器可能暫時無法連線，請重新提交影像。</p>
+            <button
+              onClick={() => router.push('/')}
+              className="mt-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600"
+            >
+              重新提交
+            </button>
+          </div>
         )}
 
         {caseData.status === 'error' && (
