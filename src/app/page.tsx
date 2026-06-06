@@ -1,51 +1,44 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
-import { Microscope, Upload, CheckCircle, X, ScanLine, Brain } from 'lucide-react'
+import { Microscope, Upload, CheckCircle, X, ScanLine, Brain, ShieldAlert, ExternalLink } from 'lucide-react'
 import type { MRIUploadState, CTUploadState, ModalityMode } from '@/types'
 
-const MRI_INITIAL: MRIUploadState = {
-  t2w: null, adc: null, hbv: null,
-  patientId: '', patientName: '', age: '', psa: '',
-  studyDate: new Date().toISOString().slice(0, 10),
-}
+// HTTPS direct-upload URL (bypasses Vercel 4.5 MB limit)
+const DIRECT_API = process.env.NEXT_PUBLIC_DIRECT_API_URL || 'https://140.112.183.111:8443'
+const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024   // 4 MB
 
-const CT_INITIAL: CTUploadState = {
-  ct: null,
-  patientId: '', patientName: '', age: '', psa: '',
-  studyDate: new Date().toISOString().slice(0, 10),
-}
-
-// Single MRI modality file drop zone
+// ── Single file drop-zone ──────────────────────────────────────────────────────
 function ModalityZone({
   label, sublabel, color, file, onFile, accept = '.nii,.gz,.mha',
 }: {
   label: string; sublabel: string; color: string; file: File | null
   onFile: (f: File | null) => void; accept?: string
 }) {
-  const ref = useRef<HTMLInputElement>(null)
+  const ref  = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
 
-  const colors: Record<string, string> = {
+  const border: Record<string, string> = {
     blue:   'border-blue-300 bg-blue-50 hover:border-blue-500',
     purple: 'border-purple-300 bg-purple-50 hover:border-purple-500',
     green:  'border-green-300 bg-green-50 hover:border-green-500',
+    teal:   'border-teal-300 bg-teal-50 hover:border-teal-500',
   }
   const active: Record<string, string> = {
     blue: 'border-blue-500 bg-blue-100', purple: 'border-purple-500 bg-purple-100',
-    green: 'border-green-500 bg-green-100',
+    green: 'border-green-500 bg-green-100', teal: 'border-teal-500 bg-teal-100',
   }
   const badge: Record<string, string> = {
     blue: 'bg-blue-100 text-blue-700', purple: 'bg-purple-100 text-purple-700',
-    green: 'bg-green-100 text-green-700',
+    green: 'bg-green-100 text-green-700', teal: 'bg-teal-100 text-teal-700',
   }
 
   return (
     <div
       className={`relative border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all
-        ${drag ? active[color] : colors[color]}`}
+        ${drag ? active[color] : border[color]}`}
       onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); onFile(e.dataTransfer.files[0] ?? null) }}
@@ -53,91 +46,142 @@ function ModalityZone({
     >
       <input ref={ref} type="file" accept={accept} className="hidden"
         onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-
       <div className="flex items-center gap-3">
-        <div className={`text-xs font-bold px-2 py-1 rounded-md ${badge[color]}`}>{label}</div>
+        <div className={`text-xs font-bold px-2 py-1 rounded-md flex-shrink-0 ${badge[color]}`}>{label}</div>
         <div className="flex-1 min-w-0">
           {file ? (
             <div className="flex items-center gap-2">
               <CheckCircle size={14} className="text-green-500 flex-shrink-0" />
               <span className="text-sm font-medium text-gray-700 truncate">{file.name}</span>
-              <span className="text-xs text-gray-400 flex-shrink-0">
-                ({(file.size / 1024 / 1024).toFixed(1)} MB)
-              </span>
+              <span className="text-xs text-gray-400 flex-shrink-0">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
             </div>
           ) : (
             <p className="text-sm text-gray-500">{sublabel}</p>
           )}
         </div>
-        {file ? (
-          <button onClick={(e) => { e.stopPropagation(); onFile(null) }}
-            className="text-gray-400 hover:text-red-500 flex-shrink-0">
-            <X size={16} />
-          </button>
-        ) : (
-          <Upload size={16} className="text-gray-400 flex-shrink-0" />
-        )}
+        {file
+          ? <button onClick={(e) => { e.stopPropagation(); onFile(null) }} className="text-gray-400 hover:text-red-500 flex-shrink-0"><X size={16} /></button>
+          : <Upload size={16} className="text-gray-400 flex-shrink-0" />}
       </div>
     </div>
   )
 }
 
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const router = useRouter()
-  const [mode, setMode] = useState<ModalityMode>('mri')
+  const [mode, setMode]     = useState<ModalityMode>('mri')
   const [mriFiles, setMriFiles] = useState({ t2w: null as File|null, adc: null as File|null, hbv: null as File|null })
-  const [ctFile,   setCtFile]   = useState<File|null>(null)
-  const [step, setStep] = useState<'idle' | 'uploading' | 'inferring'>('idle')
-  const [error, setError] = useState('')
+  const [ctFile, setCtFile] = useState<File|null>(null)
+  const [step, setStep]     = useState<'idle' | 'uploading' | 'inferring'>('idle')
+  const [error, setError]   = useState('')
+  const [certOk, setCertOk] = useState<boolean | null>(null)   // null = not checked yet
 
+  // Check if server cert is trusted (probe health endpoint)
+  const checkCert = async () => {
+    try {
+      await fetch(`${DIRECT_API}/health`, { signal: AbortSignal.timeout(5000) })
+      setCertOk(true)
+    } catch {
+      setCertOk(false)
+    }
+  }
+
+  useEffect(() => { checkCert() }, [])
+
+  // Determine whether direct upload is needed
+  const needsDirect = (): boolean => {
+    if (mode === 'ct' && ctFile && ctFile.size > LARGE_FILE_THRESHOLD) return true
+    if (mode === 'mri' && mriFiles.t2w && mriFiles.t2w.size > LARGE_FILE_THRESHOLD) return true
+    return false
+  }
+
+  // ── Submit handler ──────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     const hasFile = mode === 'mri' ? !!mriFiles.t2w : !!ctFile
     if (!hasFile) {
       setError(mode === 'mri' ? '請上傳 T2W 影像' : '請上傳 CT 影像')
       return
     }
-
-    // Vercel serverless limit is 4.5MB — CT files are 30-40MB, must use Demo mode
-    if (mode === 'ct' && ctFile && ctFile.size > 4 * 1024 * 1024) {
-      setError('CT 檔案過大，無法透過雲端服務上傳。請改用「🎬 Demo 模式」直接點選預存案例進行分析。')
+    if (needsDirect() && certOk === false) {
+      setError('請先點擊上方「信任 AI 伺服器憑證」連結，開啟頁面後點「進階」→「繼續前往」，再回到此頁重新提交。')
       return
     }
 
     setError('')
     setStep('uploading')
-    try {
-      // Auto-generate anonymous case info
-      const autoId = `CASE-${Date.now()}`
-      const { data: newCase } = await axios.post('/api/cases', {
-        patientId:   autoId,
-        patientName: 'Anonymous',
-        age:         0,
-        psa:         undefined,
-        studyDate:   new Date().toISOString().slice(0, 10),
-        modality:    mode,
-      })
-      setStep('inferring')
-      const fd = new FormData()
-      fd.append('caseId', newCase._id)
 
-      if (mode === 'mri') {
-        fd.append('t2w', mriFiles.t2w!, mriFiles.t2w!.name)
-        if (mriFiles.adc) fd.append('adc', mriFiles.adc, mriFiles.adc.name)
-        if (mriFiles.hbv) fd.append('hbv', mriFiles.hbv, mriFiles.hbv.name)
-        await axios.post('/api/inference', fd)
+    try {
+      if (needsDirect()) {
+        // ── Direct upload path (large files bypass Vercel) ──────────────────
+        await directUpload()
       } else {
-        fd.append('ct', ctFile!, ctFile!.name)
-        await axios.post('/api/infer-ct', fd)
+        // ── Vercel proxy path (small files < 4 MB) ──────────────────────────
+        await vercelUpload()
       }
-      router.push(`/results/${newCase._id}`)
-    } catch (err: any) {
-      setError(err?.response?.data?.error || '發生錯誤，請再試一次')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } }; message?: string })
+      setError(msg?.response?.data?.error || msg?.message || '發生錯誤，請再試一次')
       setStep('idle')
     }
   }
 
-  const busy = step !== 'idle'
+  // Direct upload: browser → school server → /api/save-case (MongoDB) → /results/id
+  const directUpload = async () => {
+    const fd = new FormData()
+    if (mode === 'ct') {
+      fd.append('ct_file', ctFile!, ctFile!.name)
+    } else {
+      fd.append('t2w_file', mriFiles.t2w!, mriFiles.t2w!.name)
+      if (mriFiles.adc) fd.append('adc_file', mriFiles.adc, mriFiles.adc.name)
+      if (mriFiles.hbv) fd.append('hbv_file', mriFiles.hbv, mriFiles.hbv.name)
+    }
+
+    setStep('inferring')
+    const endpoint = mode === 'ct' ? `${DIRECT_API}/infer_ct` : `${DIRECT_API}/infer`
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      body: fd,
+      signal: AbortSignal.timeout(300_000),   // 5 min
+    })
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}))
+      throw new Error(e?.detail || `伺服器錯誤 ${resp.status}`)
+    }
+    const data = await resp.json()
+
+    // Save result to MongoDB via Vercel lightweight API
+    const { data: saved } = await axios.post('/api/save-case', { ...data, modality: mode })
+    router.push(`/results/${saved.id}`)
+  }
+
+  // Vercel proxy upload (small files)
+  const vercelUpload = async () => {
+    const autoId = `CASE-${Date.now()}`
+    const { data: newCase } = await axios.post('/api/cases', {
+      patientId: autoId, patientName: '本地上傳', age: 0,
+      studyDate: new Date().toISOString().slice(0, 10), modality: mode,
+    })
+
+    setStep('inferring')
+    const fd = new FormData()
+    fd.append('caseId', newCase._id)
+
+    if (mode === 'mri') {
+      fd.append('t2w', mriFiles.t2w!, mriFiles.t2w!.name)
+      if (mriFiles.adc) fd.append('adc', mriFiles.adc, mriFiles.adc.name)
+      if (mriFiles.hbv) fd.append('hbv', mriFiles.hbv, mriFiles.hbv.name)
+      await axios.post('/api/inference', fd)
+    } else {
+      fd.append('ct', ctFile!, ctFile!.name)
+      await axios.post('/api/infer-ct', fd)
+    }
+    router.push(`/results/${newCase._id}`)
+  }
+
+  const busy      = step !== 'idle'
   const canSubmit = mode === 'mri' ? !!mriFiles.t2w : !!ctFile
+  const isDirect  = needsDirect()
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -149,14 +193,8 @@ export default function HomePage() {
             <p className="text-xs text-gray-500">攝護腺疾病 AI 風險評估系統</p>
           </div>
           <div className="ml-auto flex items-center gap-4">
-            <button onClick={() => router.push('/demo')}
-              className="text-sm text-teal-600 hover:underline font-medium">
-              🎬 Demo
-            </button>
-            <button onClick={() => router.push('/cases')}
-              className="text-sm text-blue-600 hover:underline">
-              歷史病例 →
-            </button>
+            <button onClick={() => router.push('/demo')} className="text-sm text-teal-600 hover:underline font-medium">🎬 Demo</button>
+            <button onClick={() => router.push('/cases')} className="text-sm text-blue-600 hover:underline">歷史病例 →</button>
           </div>
         </div>
       </header>
@@ -166,10 +204,10 @@ export default function HomePage() {
         {/* Mode selector */}
         <div className="grid grid-cols-2 gap-3">
           {([
-            { m: 'mri' as const, icon: Brain,    title: 'MRI 攝護腺癌篩檢',    sub: 'mpMRI → ISUP 風險分級',     color: 'blue' },
-            { m: 'ct'  as const, icon: ScanLine, title: 'CT 攝護腺肥大（BPH）', sub: 'CT → 體積計算 → BPH 分級', color: 'teal' },
+            { m: 'mri' as const, icon: Brain,    title: 'MRI 攝護腺癌篩檢',     sub: 'mpMRI → ISUP 風險分級',     color: 'blue' },
+            { m: 'ct'  as const, icon: ScanLine, title: 'CT 攝護腺肥大（BPH）',  sub: 'CT → 體積計算 → BPH 分級', color: 'teal' },
           ]).map(({ m, icon: Icon, title, sub, color }) => (
-            <button key={m} onClick={() => setMode(m)}
+            <button key={m} onClick={() => { setMode(m); setError('') }}
               className={`rounded-2xl border-2 p-4 text-left transition-all
                 ${mode === m
                   ? color === 'blue' ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-teal-500 bg-teal-50 shadow-md'
@@ -182,6 +220,40 @@ export default function HomePage() {
             </button>
           ))}
         </div>
+
+        {/* SSL cert notice for direct upload */}
+        {isDirect && certOk === false && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <ShieldAlert size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm">
+              <p className="font-semibold text-amber-800">首次大檔案上傳：請信任 AI 伺服器</p>
+              <p className="text-amber-700 mt-1">
+                由於 CT/MRI 影像較大（{((mode === 'ct' ? ctFile?.size : mriFiles.t2w?.size) ?? 0) / 1024 / 1024 | 0} MB），
+                需直接連線至 AI 伺服器。請先信任憑證：
+              </p>
+              <a
+                href={`${DIRECT_API}/health`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setTimeout(checkCert, 3000)}
+                className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                <ExternalLink size={13} />
+                點此信任 AI 伺服器憑證
+              </a>
+              <p className="text-xs text-amber-600 mt-1.5">
+                開啟後點「進階」→「繼續前往 140.112.183.111」，再回到此頁提交。
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isDirect && certOk === true && (
+          <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5 text-sm text-teal-800 flex items-center gap-2">
+            <CheckCircle size={16} className="text-teal-500" />
+            大檔案將直接上傳至 AI 伺服器進行推論（憑證已信任 ✓）
+          </div>
+        )}
 
         {/* MRI Upload */}
         {mode === 'mri' && (
@@ -200,17 +272,6 @@ export default function HomePage() {
             <ModalityZone label="HBV" color="green"
               sublabel="High b-value DWI (.nii.gz / .mha) — 選填"
               file={mriFiles.hbv} onFile={(f) => setMriFiles(s => ({ ...s, hbv: f }))} />
-            <div className="flex gap-2 pt-1 flex-wrap">
-              {(['t2w', 'adc', 'hbv'] as const).map((k) => (
-                <div key={k} className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full
-                  ${mriFiles[k] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                  {mriFiles[k] && <CheckCircle size={10} />}
-                  {k.toUpperCase()}
-                </div>
-              ))}
-              {mriFiles.adc && mriFiles.hbv &&
-                <span className="text-xs text-green-600 font-medium ml-auto">✓ 完整 mpMRI</span>}
-            </div>
           </section>
         )}
 
@@ -221,16 +282,14 @@ export default function HomePage() {
               <ScanLine size={16} className="text-teal-500" />
               CT 影像上傳
             </h2>
-            <ModalityZone label="CT *" color="blue"
-              sublabel="腹/骨盆腔 CT (.nii.gz / .mha / .dcm) — 必填"
+            <ModalityZone label="CT *" color="teal"
+              sublabel="骨盆腔 CT (.nii.gz / .mha) — 必填"
               file={ctFile} onFile={setCtFile} accept=".nii,.gz,.mha,.dcm" />
           </section>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-            {error}
-          </div>
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>
         )}
 
         <button onClick={handleSubmit} disabled={busy || !canSubmit}
@@ -245,7 +304,7 @@ export default function HomePage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              上傳中...
+              上傳至 AI 伺服器中...
             </span>
           )}
           {step === 'inferring' && (

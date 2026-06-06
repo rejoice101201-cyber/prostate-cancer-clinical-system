@@ -3,6 +3,10 @@
     "src/app/api/predict-demo-ct/[caseId]/route.ts": { "maxDuration": 60 },
     "src/app/api/predict-demo-mri/[caseId]/route.ts": { "maxDuration": 60 },
     "src/app/api/infer-ct/route.ts":                  { "maxDuration": 60 },
-    "src/app/api/inference/route.ts":                  { "maxDuration": 60 }
+    "src/app/api/inference/route.ts":                  { "maxDuration": 60 },
+    "src/app/api/save-case/route.ts":                  { "maxDuration": 30 }
+  },
+  "env": {
+    "NEXT_PUBLIC_DIRECT_API_URL": "https://140.112.183.111:8443"
   }
 }
