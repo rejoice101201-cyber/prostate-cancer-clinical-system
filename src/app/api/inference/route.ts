@@ -42,11 +42,21 @@ export async function POST(req: NextRequest) {
     let result: InferenceResult
 
     try {
+      // Read files as ArrayBuffer → Blob for correct Node.js multipart serialization
+      const t2wBytes = await t2wFile.arrayBuffer()
+      const t2wBlob  = new Blob([t2wBytes], { type: 'application/octet-stream' })
+
       const upstream = new FormData()
       upstream.append('case_id', caseId)
-      upstream.append('t2w', t2wFile, t2wFile.name)
-      if (adcFile) upstream.append('adc', adcFile, adcFile.name)
-      if (hbvFile) upstream.append('hbv', hbvFile, hbvFile.name)
+      upstream.append('t2w', t2wBlob, t2wFile.name)
+      if (adcFile) {
+        const b = new Blob([await adcFile.arrayBuffer()], { type: 'application/octet-stream' })
+        upstream.append('adc', b, adcFile.name)
+      }
+      if (hbvFile) {
+        const b = new Blob([await hbvFile.arrayBuffer()], { type: 'application/octet-stream' })
+        upstream.append('hbv', b, hbvFile.name)
+      }
 
       // First try DL endpoint; fall back to Radiomics endpoint if DL not ready
       let resp = await fetch(`${INFERENCE_API_URL}/infer_mri`, {

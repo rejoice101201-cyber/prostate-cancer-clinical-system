@@ -47,14 +47,13 @@ export async function POST(req: NextRequest) {
     let bphResult: BPHResult
 
     try {
+      // Read file as ArrayBuffer → Blob to ensure correct multipart serialization in Node.js
+      const fileBytes = await ctFile.arrayBuffer()
+      const blob = new Blob([fileBytes], { type: 'application/octet-stream' })
+
       const upstream = new FormData()
       upstream.append('case_id', caseId)
-      upstream.append('ct_file', ctFile, ctFile.name)
-
-      const psa = formData.get('psa')
-      const age = formData.get('age')
-      if (psa) upstream.append('psa', psa)
-      if (age) upstream.append('age', age)
+      upstream.append('ct_file', blob, ctFile.name)
 
       const resp = await fetch(`${INFERENCE_API_URL}/infer_ct`, {
         method: 'POST',
