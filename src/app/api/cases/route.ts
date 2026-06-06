@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       age: Number(body.age),
       psa: body.psa ? Number(body.psa) : undefined,
       studyDate: body.studyDate,
+      modality: body.modality ?? 'mri',   // ← fix: persist CT/MRI modality
       status: 'pending',
     })
     return NextResponse.json(newCase, { status: 201 })
