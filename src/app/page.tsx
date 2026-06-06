@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
-import { Microscope, Upload, CheckCircle, X, ScanLine, Brain, ShieldAlert, ExternalLink } from 'lucide-react'
+import { Microscope, Upload, CheckCircle, X, ScanLine, Brain } from 'lucide-react'
 import type { MRIUploadState, CTUploadState, ModalityMode } from '@/types'
 
 // HTTPS direct-upload URL (bypasses Vercel 4.5 MB limit)
@@ -75,19 +75,6 @@ export default function HomePage() {
   const [ctFile, setCtFile] = useState<File|null>(null)
   const [step, setStep]     = useState<'idle' | 'uploading' | 'inferring'>('idle')
   const [error, setError]   = useState('')
-  const [certOk, setCertOk] = useState<boolean | null>(null)   // null = not checked yet
-
-  // Check if server cert is trusted (probe health endpoint)
-  const checkCert = async () => {
-    try {
-      await fetch(`${DIRECT_API}/health`, { signal: AbortSignal.timeout(5000) })
-      setCertOk(true)
-    } catch {
-      setCertOk(false)
-    }
-  }
-
-  useEffect(() => { checkCert() }, [])
 
   // Determine whether direct upload is needed
   const needsDirect = (): boolean => {
@@ -103,11 +90,6 @@ export default function HomePage() {
       setError(mode === 'mri' ? '請上傳 T2W 影像' : '請上傳 CT 影像')
       return
     }
-    if (needsDirect() && certOk === false) {
-      setError('請先點擊上方「信任 AI 伺服器憑證」連結，開啟頁面後點「進階」→「繼續前往」，再回到此頁重新提交。')
-      return
-    }
-
     setError('')
     setStep('uploading')
 
@@ -181,7 +163,6 @@ export default function HomePage() {
 
   const busy      = step !== 'idle'
   const canSubmit = mode === 'mri' ? !!mriFiles.t2w : !!ctFile
-  const isDirect  = needsDirect()
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -220,40 +201,6 @@ export default function HomePage() {
             </button>
           ))}
         </div>
-
-        {/* SSL cert notice for direct upload */}
-        {isDirect && certOk === false && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
-            <ShieldAlert size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 text-sm">
-              <p className="font-semibold text-amber-800">首次大檔案上傳：請信任 AI 伺服器</p>
-              <p className="text-amber-700 mt-1">
-                由於 CT/MRI 影像較大（{((mode === 'ct' ? ctFile?.size : mriFiles.t2w?.size) ?? 0) / 1024 / 1024 | 0} MB），
-                需直接連線至 AI 伺服器。請先信任憑證：
-              </p>
-              <a
-                href={`${DIRECT_API}/health`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setTimeout(checkCert, 3000)}
-                className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors"
-              >
-                <ExternalLink size={13} />
-                點此信任 AI 伺服器憑證
-              </a>
-              <p className="text-xs text-amber-600 mt-1.5">
-                開啟後點「進階」→「繼續前往 140.112.183.111」，再回到此頁提交。
-              </p>
-            </div>
-          </div>
-        )}
-
-        {isDirect && certOk === true && (
-          <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5 text-sm text-teal-800 flex items-center gap-2">
-            <CheckCircle size={16} className="text-teal-500" />
-            大檔案將直接上傳至 AI 伺服器進行推論（憑證已信任 ✓）
-          </div>
-        )}
 
         {/* MRI Upload */}
         {mode === 'mri' && (
