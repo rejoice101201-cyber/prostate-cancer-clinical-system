@@ -27,6 +27,7 @@ const BPHResultSchema = new Schema({
   caseId: String,
   prostateVolumeCc: Number,
   bphGrade: String,
+  bphLevel: Number,
   riskLevel: String,
   color: String,
   psaDensity: Number,
@@ -34,6 +35,10 @@ const BPHResultSchema = new Schema({
   recommendation: String,
   processingTimeMs: Number,
   modelType: String,
+  // Visualization slices (base64 PNG from server)
+  sliceOriginal:     String,
+  sliceDetection:    String,
+  sliceSegmentation: String,
 }, { _id: false })
 
 const CaseSchema = new Schema<PatientCase>({
