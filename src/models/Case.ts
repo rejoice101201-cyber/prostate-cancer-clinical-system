@@ -21,6 +21,14 @@ const InferenceResultSchema = new Schema({
   findings: String,
   recommendation: String,
   processingTimeMs: Number,
+  // Risk scoring fields
+  modelType:  String,
+  riskScore:  Number,
+  riskLevel:  String,
+  // Visualization slices (base64 PNG from server — same as BPHResultSchema)
+  sliceOriginal:     String,
+  sliceDetection:    String,
+  sliceSegmentation: String,
 }, { _id: false })
 
 const BPHResultSchema = new Schema({

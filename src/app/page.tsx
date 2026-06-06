@@ -6,9 +6,8 @@ import axios from 'axios'
 import { Microscope, Upload, CheckCircle, X, ScanLine, Brain } from 'lucide-react'
 import type { MRIUploadState, CTUploadState, ModalityMode } from '@/types'
 
-// HTTPS direct-upload URL (bypasses Vercel 4.5 MB limit)
-const DIRECT_API = process.env.NEXT_PUBLIC_DIRECT_API_URL || 'https://140.112.183.111:8443'
-const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024   // 4 MB
+// All uploads go through Vercel rewrite → HTTP 8000 (no cert issues)
+const SERVER_PROXY = '/proxy'
 
 // ── Single file drop-zone ──────────────────────────────────────────────────────
 function ModalityZone({
@@ -76,13 +75,6 @@ export default function HomePage() {
   const [step, setStep]     = useState<'idle' | 'uploading' | 'inferring'>('idle')
   const [error, setError]   = useState('')
 
-  // Determine whether direct upload is needed
-  const needsDirect = (): boolean => {
-    if (mode === 'ct' && ctFile && ctFile.size > LARGE_FILE_THRESHOLD) return true
-    if (mode === 'mri' && mriFiles.t2w && mriFiles.t2w.size > LARGE_FILE_THRESHOLD) return true
-    return false
-  }
-
   // ── Submit handler ──────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     const hasFile = mode === 'mri' ? !!mriFiles.t2w : !!ctFile
@@ -94,13 +86,7 @@ export default function HomePage() {
     setStep('uploading')
 
     try {
-      if (needsDirect()) {
-        // ── Direct upload path (large files bypass Vercel) ──────────────────
-        await directUpload()
-      } else {
-        // ── Vercel proxy path (small files < 4 MB) ──────────────────────────
-        await vercelUpload()
-      }
+      await doUpload()
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } }; message?: string })
       setError(msg?.response?.data?.error || msg?.message || '發生錯誤，請再試一次')
@@ -108,8 +94,8 @@ export default function HomePage() {
     }
   }
 
-  // Direct upload: browser → school server → /api/save-case (MongoDB) → /results/id
-  const directUpload = async () => {
+  // Upload: browser → Vercel /proxy/* (rewrite) → HTTP 8000 → /api/save-case → /results/id
+  const doUpload = async () => {
     const fd = new FormData()
     if (mode === 'ct') {
       fd.append('ct_file', ctFile!, ctFile!.name)
@@ -120,11 +106,14 @@ export default function HomePage() {
     }
 
     setStep('inferring')
-    const endpoint = mode === 'ct' ? `${DIRECT_API}/infer_ct` : `${DIRECT_API}/infer`
+    const endpoint = mode === 'ct'
+      ? `${SERVER_PROXY}/infer_ct`
+      : `${SERVER_PROXY}/infer`
+
     const resp = await fetch(endpoint, {
       method: 'POST',
       body: fd,
-      signal: AbortSignal.timeout(300_000),   // 5 min
+      signal: AbortSignal.timeout(600_000),   // 10 min timeout
     })
     if (!resp.ok) {
       const e = await resp.json().catch(() => ({}))
@@ -132,33 +121,9 @@ export default function HomePage() {
     }
     const data = await resp.json()
 
-    // Save result to MongoDB via Vercel lightweight API
+    // Save result to MongoDB via lightweight Vercel API
     const { data: saved } = await axios.post('/api/save-case', { ...data, modality: mode })
     router.push(`/results/${saved.id}`)
-  }
-
-  // Vercel proxy upload (small files)
-  const vercelUpload = async () => {
-    const autoId = `CASE-${Date.now()}`
-    const { data: newCase } = await axios.post('/api/cases', {
-      patientId: autoId, patientName: '本地上傳', age: 0,
-      studyDate: new Date().toISOString().slice(0, 10), modality: mode,
-    })
-
-    setStep('inferring')
-    const fd = new FormData()
-    fd.append('caseId', newCase._id)
-
-    if (mode === 'mri') {
-      fd.append('t2w', mriFiles.t2w!, mriFiles.t2w!.name)
-      if (mriFiles.adc) fd.append('adc', mriFiles.adc, mriFiles.adc.name)
-      if (mriFiles.hbv) fd.append('hbv', mriFiles.hbv, mriFiles.hbv.name)
-      await axios.post('/api/inference', fd)
-    } else {
-      fd.append('ct', ctFile!, ctFile!.name)
-      await axios.post('/api/infer-ct', fd)
-    }
-    router.push(`/results/${newCase._id}`)
   }
 
   const busy      = step !== 'idle'

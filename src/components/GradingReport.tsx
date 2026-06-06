@@ -3,10 +3,12 @@ import type { InferenceResult } from '@/types'
 import PIRADSBadge from './PIRADSBadge'
 
 const MODEL_LABELS: Record<string, { label: string; color: string }> = {
-  DL_SwinUNETR_mpMRI: { label: 'SwinUNETR · mpMRI',   color: 'bg-violet-100 text-violet-700' },
-  DL_ResNet3D:        { label: 'ResNet3D · mpMRI',      color: 'bg-violet-100 text-violet-700' },
-  radiomics_fallback: { label: 'Radiomics · T2W only',  color: 'bg-amber-100 text-amber-700'  },
-  mock:               { label: 'Demo Mock',              color: 'bg-gray-100 text-gray-500'    },
+  DL_SwinUNETR_mpMRI:  { label: 'SwinUNETR · mpMRI',       color: 'bg-violet-100 text-violet-700' },
+  DL_ResNet3D:         { label: 'ResNet3D · mpMRI',          color: 'bg-violet-100 text-violet-700' },
+  radiomics_fallback:  { label: 'Radiomics · T2W only',      color: 'bg-amber-100 text-amber-700'  },
+  radiomics_xgboost:   { label: 'XGBoost Radiomics · T2W',   color: 'bg-blue-100 text-blue-700'    },
+  'XGBoost+isotonic':  { label: 'XGBoost+isotonic · T2W',    color: 'bg-blue-100 text-blue-700'    },
+  mock:                { label: 'Demo Mock',                  color: 'bg-gray-100 text-gray-500'    },
 }
 
 export default function GradingReport({ result }: { result: InferenceResult }) {
@@ -29,6 +31,9 @@ export default function GradingReport({ result }: { result: InferenceResult }) {
           {result.riskScore !== undefined && (
             <p className="text-sm text-gray-500">
               風險分數：<span className="font-semibold">{(result.riskScore * 100).toFixed(1)}%</span>
+              {result.riskLevel && (
+                <span className="ml-2 text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600">{result.riskLevel}</span>
+              )}
             </p>
           )}
           {modelMeta && (
