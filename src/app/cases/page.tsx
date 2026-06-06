@@ -21,15 +21,36 @@ const BPH_COLOR: Record<string, string> = {
   red:         'bg-red-100 text-red-700',
 }
 
+function formatDateTime(iso?: string) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const date = d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  const time = d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  return `${date} ${time}`
+}
+
 export default function CasesPage() {
   const router = useRouter()
   const [cases, setCases] = useState<PatientCase[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchCases = () => {
     axios.get('/api/cases')
       .then((r) => setCases(r.data))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    fetchCases()
+    // Auto-refresh every 5s if any case is still processing
+    const interval = setInterval(() => {
+      setCases(prev => {
+        const hasProcessing = prev.some(c => c.status === 'processing' || c.status === 'pending')
+        if (hasProcessing) fetchCases()
+        return prev
+      })
+    }, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   return (
@@ -40,7 +61,12 @@ export default function CasesPage() {
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-xl font-bold text-gray-900">歷史病例</h1>
-          <span className="ml-auto text-sm text-gray-400">{cases.length} 筆紀錄</span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-sm text-gray-400">{cases.length} 筆紀錄</span>
+            <button onClick={fetchCases} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400">
+              <Loader size={15} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -83,7 +109,7 @@ export default function CasesPage() {
                     <span className="text-xs text-gray-400 truncate">{c.patientId}</span>
                   </div>
                   <div className="flex gap-3 text-xs text-gray-500">
-                    <span>{c.studyDate}</span>
+                    <span>{formatDateTime(c.createdAt)}</span>
                     {/* CT-specific fields */}
                     {isCT && c.status === 'completed' && c.bphResult && (
                       <span className="font-medium text-gray-700">
