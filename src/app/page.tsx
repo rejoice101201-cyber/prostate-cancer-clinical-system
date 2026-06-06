@@ -141,10 +141,16 @@ export default function HomePage() {
             <h1 className="text-xl font-bold text-gray-900">ProstateScan AI</h1>
             <p className="text-xs text-gray-500">攝護腺疾病 AI 風險評估系統</p>
           </div>
-          <button onClick={() => router.push('/cases')}
-            className="ml-auto text-sm text-blue-600 hover:underline">
-            歷史病例 →
-          </button>
+          <div className="ml-auto flex items-center gap-4">
+            <button onClick={() => router.push('/demo')}
+              className="text-sm text-teal-600 hover:underline font-medium">
+              🎬 Demo
+            </button>
+            <button onClick={() => router.push('/cases')}
+              className="text-sm text-blue-600 hover:underline">
+              歷史病例 →
+            </button>
+          </div>
         </div>
       </header>
 
