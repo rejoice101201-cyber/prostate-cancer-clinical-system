@@ -80,6 +80,39 @@ export default function GradingReport({ result }: { result: InferenceResult }) {
         </div>
       </div>
 
+      {/* Visualization slices */}
+      {(result.sliceOriginal || result.sliceDetection || result.sliceSegmentation) && (
+        <div>
+          <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <Brain size={18} className="text-blue-500" />
+            MRI 切面影像
+          </h3>
+          <div className="grid grid-cols-3 gap-0 rounded-xl overflow-hidden border border-gray-200">
+            {[
+              { key: 'sliceOriginal',     label: 'T2W 原始切面' },
+              { key: 'sliceDetection',    label: '攝護腺偵測框' },
+              { key: 'sliceSegmentation', label: '分割結果'      },
+            ].map(({ key, label }) => {
+              const src = result[key as keyof typeof result] as string | undefined
+              return src ? (
+                <div key={key} className="relative">
+                  <img src={`data:image/png;base64,${src}`} alt={label}
+                    className="w-full aspect-square object-cover" />
+                  <span className="absolute bottom-1 left-0 right-0 text-center text-white text-[10px] font-medium
+                    bg-black/40 py-0.5">
+                    {label}
+                  </span>
+                </div>
+              ) : (
+                <div key={key} className="bg-gray-100 aspect-square flex items-center justify-center text-gray-400 text-xs">
+                  {label}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Findings */}
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
         <h3 className="font-semibold text-blue-800 mb-2">影像發現</h3>

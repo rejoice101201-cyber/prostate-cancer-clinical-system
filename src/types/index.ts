@@ -26,6 +26,10 @@ export interface InferenceResult {
   modelType?: 'DL_SwinUNETR_mpMRI' | 'DL_ResNet3D' | 'radiomics_fallback' | 'mock'
   riskScore?: number   // raw 0–1 from radiomics fallback
   riskLevel?: string
+  // Visualization slices (base64 PNG)
+  sliceOriginal?: string
+  sliceDetection?: string
+  sliceSegmentation?: string
 }
 
 // CT BPH result from /infer_ct

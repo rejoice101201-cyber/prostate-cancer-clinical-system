@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { connectDB } from '@/lib/mongodb'
+import Case from '@/models/Case'
 import type { BPHResult } from '@/types'
 
 const INFERENCE_API_URL = process.env.INFERENCE_API_URL || 'http://140.112.183.111:8000'
@@ -41,6 +43,22 @@ export async function POST(
       sliceDetection:    data.slice_detection    || undefined,
       sliceSegmentation: data.slice_segmentation || undefined,
     }
+    // Save to MongoDB so it appears in 歷史病例
+    try {
+      await connectDB()
+      await Case.create({
+        patientId:   `DEMO-CT-${caseId}`,
+        patientName: 'Demo',
+        age:         0,
+        studyDate:   new Date().toISOString().slice(0, 10),
+        modality:    'ct',
+        status:      'completed',
+        bphResult:   result,
+      })
+    } catch (dbErr) {
+      console.warn('Demo CT DB save failed:', dbErr)
+    }
+
     return NextResponse.json(result)
   } catch (err) {
     console.error('predict_demo_ct error:', err)
