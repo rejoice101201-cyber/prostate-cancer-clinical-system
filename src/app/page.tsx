@@ -96,6 +96,13 @@ export default function HomePage() {
       setError(mode === 'mri' ? '請上傳 T2W 影像' : '請上傳 CT 影像')
       return
     }
+
+    // Vercel serverless limit is 4.5MB — CT files are 30-40MB, must use Demo mode
+    if (mode === 'ct' && ctFile && ctFile.size > 4 * 1024 * 1024) {
+      setError('CT 檔案過大，無法透過雲端服務上傳。請改用「🎬 Demo 模式」直接點選預存案例進行分析。')
+      return
+    }
+
     setError('')
     setStep('uploading')
     try {
