@@ -259,12 +259,12 @@ export default function HomePage() {
             </div>
             <div className="flex items-center justify-between text-xs text-gray-500">
               <span>已等待：<strong>{fmtElapsed(elapsed)}</strong></span>
-              <span>{mode === 'ct' ? '預計約 7 分鐘（CPU 模式）' : '預計約 10–15 分鐘'}</span>
+              <span>{mode === 'ct' ? '預計約 1–3 分鐘（GPU）' : '預計約 3–5 分鐘（GPU）'}</span>
             </div>
             <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${mode === 'mri' ? 'bg-blue-400' : 'bg-teal-400'}`}
-                style={{ width: `${Math.min((elapsed / (mode === 'ct' ? 420 : 750)) * 100, 95)}%` }}
+                style={{ width: `${Math.min((elapsed / (mode === 'ct' ? 180 : 300)) * 100, 95)}%` }}
               />
             </div>
           </div>
@@ -295,7 +295,7 @@ export default function HomePage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              {mode === 'ct' ? 'nnUNet 分析中（約 7 分鐘）' : 'AI 推論中（約 10–15 分鐘）'}
+              {mode === 'ct' ? 'nnUNet 分析中（約 1–3 分鐘）' : 'AI 推論中（約 3–5 分鐘）'}
             </span>
           )}
         </button>
