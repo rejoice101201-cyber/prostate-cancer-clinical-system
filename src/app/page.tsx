@@ -3,11 +3,13 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
-import { Microscope, Upload, CheckCircle, X, ScanLine, Brain } from 'lucide-react'
-import type { MRIUploadState, CTUploadState, ModalityMode } from '@/types'
+import { Microscope, Upload, CheckCircle, X, ScanLine, Brain, Loader2 } from 'lucide-react'
+import type { ModalityMode } from '@/types'
 
-// All uploads go through Vercel rewrite → HTTP 8000 (no cert issues)
-const SERVER_PROXY = '/proxy'
+// All uploads go through Vercel rewrite → HTTP 8000 (no cert issues, no size limit)
+const PROXY = '/proxy'
+const POLL_INTERVAL_MS  = 10_000   // 10 s between polls
+const MAX_WAIT_MS       = 20 * 60 * 1000  // 20 min max wait
 
 // ── Single file drop-zone ──────────────────────────────────────────────────────
 function ModalityZone({
@@ -72,8 +74,11 @@ export default function HomePage() {
   const [mode, setMode]     = useState<ModalityMode>('mri')
   const [mriFiles, setMriFiles] = useState({ t2w: null as File|null, adc: null as File|null, hbv: null as File|null })
   const [ctFile, setCtFile] = useState<File|null>(null)
-  const [step, setStep]     = useState<'idle' | 'uploading' | 'inferring'>('idle')
-  const [error, setError]   = useState('')
+
+  // 'idle' | 'uploading' | 'waiting' (polling)
+  const [step, setStep]       = useState<'idle' | 'uploading' | 'waiting'>('idle')
+  const [elapsed, setElapsed] = useState(0)   // seconds since job started
+  const [error, setError]     = useState('')
 
   // ── Submit handler ──────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -83,6 +88,7 @@ export default function HomePage() {
       return
     }
     setError('')
+    setElapsed(0)
     setStep('uploading')
 
     try {
@@ -94,9 +100,10 @@ export default function HomePage() {
     }
   }
 
-  // Upload: browser → Vercel /proxy/* (rewrite) → HTTP 8000 → /api/save-case → /results/id
   const doUpload = async () => {
     const fd = new FormData()
+    const endpoint = mode === 'ct' ? `${PROXY}/submit_ct` : `${PROXY}/submit_mri`
+
     if (mode === 'ct') {
       fd.append('ct_file', ctFile!, ctFile!.name)
     } else {
@@ -105,29 +112,68 @@ export default function HomePage() {
       if (mriFiles.hbv) fd.append('hbv_file', mriFiles.hbv, mriFiles.hbv.name)
     }
 
-    setStep('inferring')
-    const endpoint = mode === 'ct'
-      ? `${SERVER_PROXY}/infer_ct`
-      : `${SERVER_PROXY}/infer`
-
-    const resp = await fetch(endpoint, {
+    // Step 1: Submit job — returns immediately with job_id
+    const submitResp = await fetch(endpoint, {
       method: 'POST',
       body: fd,
-      signal: AbortSignal.timeout(600_000),   // 10 min timeout
+      signal: AbortSignal.timeout(120_000),  // 2 min for upload only
     })
-    if (!resp.ok) {
-      const e = await resp.json().catch(() => ({}))
-      throw new Error(e?.detail || `伺服器錯誤 ${resp.status}`)
+    if (!submitResp.ok) {
+      const e = await submitResp.json().catch(() => ({}))
+      throw new Error(e?.detail || `上傳失敗 (${submitResp.status})`)
     }
-    const data = await resp.json()
+    const { job_id } = await submitResp.json()
 
-    // Save result to MongoDB via lightweight Vercel API
-    const { data: saved } = await axios.post('/api/save-case', { ...data, modality: mode })
+    // Step 2: Poll for completion
+    setStep('waiting')
+    const result = await pollJob(job_id)
+
+    // Step 3: Save to MongoDB → navigate to result page
+    const { data: saved } = await axios.post('/api/save-case', { ...result, modality: mode })
     router.push(`/results/${saved.id}`)
+  }
+
+  const pollJob = async (job_id: string): Promise<Record<string, unknown>> => {
+    const start = Date.now()
+    let tick = 0
+
+    // Timer to update elapsed display
+    const timer = setInterval(() => {
+      tick++
+      setElapsed(tick)
+    }, 1000)
+
+    try {
+      while (Date.now() - start < MAX_WAIT_MS) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+
+        const pollResp = await fetch(`${PROXY}/job_status/${job_id}`, {
+          signal: AbortSignal.timeout(15_000),
+        })
+        if (!pollResp.ok) {
+          if (pollResp.status === 404) throw new Error('推論任務已過期，請重新提交')
+          continue  // transient error — keep polling
+        }
+
+        const { status, result, error } = await pollResp.json()
+        if (status === 'completed') return result
+        if (status === 'error')    throw new Error(error || '伺服器推論失敗')
+        // status === 'processing' → keep waiting
+      }
+      throw new Error('等待超時（超過 20 分鐘），請確認伺服器狀態後重新提交')
+    } finally {
+      clearInterval(timer)
+    }
   }
 
   const busy      = step !== 'idle'
   const canSubmit = mode === 'mri' ? !!mriFiles.t2w : !!ctFile
+
+  const fmtElapsed = (s: number) => {
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return m > 0 ? `${m}分${sec.toString().padStart(2,'0')}秒` : `${sec}秒`
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -154,7 +200,8 @@ export default function HomePage() {
             { m: 'ct'  as const, icon: ScanLine, title: 'CT 攝護腺肥大（BPH）',  sub: 'CT → 體積計算 → BPH 分級', color: 'teal' },
           ]).map(({ m, icon: Icon, title, sub, color }) => (
             <button key={m} onClick={() => { setMode(m); setError('') }}
-              className={`rounded-2xl border-2 p-4 text-left transition-all
+              disabled={busy}
+              className={`rounded-2xl border-2 p-4 text-left transition-all disabled:opacity-50
                 ${mode === m
                   ? color === 'blue' ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-teal-500 bg-teal-50 shadow-md'
                   : 'border-gray-200 bg-white hover:border-gray-300'}`}>
@@ -200,6 +247,29 @@ export default function HomePage() {
           </section>
         )}
 
+        {/* Progress display during polling */}
+        {step === 'waiting' && (
+          <div className={`rounded-2xl border px-5 py-4 space-y-2
+            ${mode === 'mri' ? 'bg-blue-50 border-blue-200' : 'bg-teal-50 border-teal-200'}`}>
+            <div className="flex items-center gap-3">
+              <Loader2 size={20} className={`animate-spin ${mode === 'mri' ? 'text-blue-500' : 'text-teal-500'}`} />
+              <p className={`font-semibold text-sm ${mode === 'mri' ? 'text-blue-800' : 'text-teal-800'}`}>
+                AI 模型推論中…（每 10 秒自動更新）
+              </p>
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500">
+              <span>已等待：<strong>{fmtElapsed(elapsed)}</strong></span>
+              <span>{mode === 'ct' ? '預計約 7 分鐘（CPU 模式）' : '預計約 10–15 分鐘'}</span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${mode === 'mri' ? 'bg-blue-400' : 'bg-teal-400'}`}
+                style={{ width: `${Math.min((elapsed / (mode === 'ct' ? 420 : 750)) * 100, 95)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>
         )}
@@ -216,19 +286,20 @@ export default function HomePage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              上傳至 AI 伺服器中...
+              上傳影像中…
             </span>
           )}
-          {step === 'inferring' && (
+          {step === 'waiting' && (
             <span className="flex items-center justify-center gap-2">
               <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              AI 分析中...
+              {mode === 'ct' ? 'nnUNet 分析中（約 7 分鐘）' : 'AI 推論中（約 10–15 分鐘）'}
             </span>
           )}
         </button>
+
         <p className="text-center text-xs text-gray-400">本系統為 AI 輔助診斷工具，最終診斷須由專業醫師判讀。</p>
       </div>
     </main>
