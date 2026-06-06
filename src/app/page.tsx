@@ -226,14 +226,22 @@ export default function HomePage() {
               ? 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300'
               : 'bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300'}`}>
           {step === 'idle' && (mode === 'mri' ? '🧠 MRI 癌症風險評估' : '📐 CT BPH 體積分析')}
-          {step === 'uploading' && '上傳影像中...'}
+          {step === 'uploading' && (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              上傳中...
+            </span>
+          )}
           {step === 'inferring' && (
             <span className="flex items-center justify-center gap-2">
               <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              AI 分析中（約 60–180 秒）...
+              AI 分析中...
             </span>
           )}
         </button>
