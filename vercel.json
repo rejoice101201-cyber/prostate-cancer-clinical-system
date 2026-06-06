@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "src/app/api/predict-demo-ct/[caseId]/route.ts": { "maxDuration": 60 },
+    "src/app/api/predict-demo-mri/[caseId]/route.ts": { "maxDuration": 60 },
+    "src/app/api/infer-ct/route.ts":                  { "maxDuration": 60 },
+    "src/app/api/inference/route.ts":                  { "maxDuration": 60 }
+  }
+}
